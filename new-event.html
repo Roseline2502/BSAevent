@@ -105,6 +105,12 @@
       .form-grid { grid-template-columns: 1fr; }
     }
   </style>
+  <link rel="manifest" href="/manifest.json" />
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
 </head>
 <body>
 

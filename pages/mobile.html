@@ -62,6 +62,12 @@
                  padding: 4px 16px; border-radius: 8px; }
     .tab.active { color: #7F77DD; }
   </style>
+  <link rel="manifest" href="/manifest.json" />
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
 </head>
 <body>
 

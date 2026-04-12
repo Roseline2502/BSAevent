@@ -1,0 +1,21 @@
+{
+  "name": "BSAEvent Manager",
+  "short_name": "BSAEvent",
+  "description": "Gestion d'événements et d'invités",
+  "start_url": "/login.html",
+  "display": "standalone",
+  "background_color": "#f5f5f3",
+  "theme_color": "#7F77DD",
+  "icons": [
+    {
+      "src": "assets/LogoEvent.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/LogoEvent.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

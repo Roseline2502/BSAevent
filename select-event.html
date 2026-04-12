@@ -99,6 +99,12 @@
     .btn-new:hover { border-color: #7F77DD; color: #7F77DD; }
     .loading { text-align: center; color: #bbb; padding: 40px 0; font-size: 14px; }
   </style>
+  <link rel="manifest" href="/manifest.json" />
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
 </head>
 <body>
 

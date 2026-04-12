@@ -54,6 +54,12 @@
     .loading        { color: #aaa; font-size: 14px; padding: 40px 0; }
     .error-msg      { color: #A32D2D; font-size: 13px; padding: 20px 0; }
   </style>
+  <link rel="manifest" href="/manifest.json" />
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
 </head>
 <body>
 <div class="card" id="card">
