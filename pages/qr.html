@@ -114,12 +114,10 @@ function qrUrl(text, size) {
 }
 
 // ── 5. Données encodées dans le QR ───────────────────────────
+// ── 5. Données encodées dans le QR ───────────────────────────
 function qrData(g) {
-  // L'URL que l'invité verra en scannant le QR
-  // En production remplace par ton vrai domaine
-  const base = window.location.origin
-    + window.location.pathname.replace("pages/qr.html", "");
-  return base + "rsvp.html?id=" + g.id;
+  // Utilise directement l'origine — fonctionne partout
+  return window.location.origin + "/rsvp.html?id=" + g.id;
 }
 
 // ── 6. Créer une image QR (pas de template literal) ──────────
