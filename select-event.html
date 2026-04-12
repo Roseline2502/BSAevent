@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Choisir un événement</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f5f3;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 700px;
+      margin: 0 auto 28px;
+    }
+    .logo-text { font-size: 18px; font-weight: 600; color: #7F77DD; }
+    .btn-logout {
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 0.5px solid #ddd;
+      background: #fff;
+      font-size: 13px;
+      color: #888;
+      cursor: pointer;
+    }
+    .btn-logout:hover { background: #f5f5f3; color: #e44; }
+    h2 {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 20px;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .events-list {
+      max-width: 700px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .event-card {
+      background: #fff;
+      border: 0.5px solid #e0e0de;
+      border-radius: 12px;
+      padding: 18px 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .event-card:hover {
+      border-color: #7F77DD;
+    }
+    .event-card.selected {
+      border-color: #7F77DD;
+      border-width: 2px;
+      background: #EEEDFE;
+    }
+    .event-nom  { font-size: 15px; font-weight: 500; color: #1a1a1a; }
+    .event-meta { font-size: 12px; color: #999; margin-top: 4px; }
+    .arrow { font-size: 18px; color: #ccc; }
+    .event-card:hover .arrow { color: #7F77DD; }
+    .empty {
+      text-align: center;
+      color: #bbb;
+      font-size: 14px;
+      padding: 40px 0;
+    }
+    .btn-new {
+      display: block;
+      max-width: 700px;
+      margin: 16px auto 0;
+      padding: 11px;
+      border-radius: 10px;
+      border: 0.5px dashed #ccc;
+      background: transparent;
+      font-size: 13px;
+      color: #888;
+      cursor: pointer;
+      text-align: center;
+      transition: border-color .15s;
+    }
+    .btn-new:hover { border-color: #7F77DD; color: #7F77DD; }
+    .loading { text-align: center; color: #bbb; padding: 40px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo-text">BSAEvent</div>
+  <button class="btn-logout" onclick="logout()">Déconnexion</button>
+</div>
+
+<h2>Choisir un événement</h2>
+<p class="subtitle">Sélectionne l'événement que tu veux gérer</p>
+
+<div class="events-list" id="events-list">
+  <div class="loading">Chargement des événements...</div>
+</div>
+
+<button class="btn-new" onclick="window.location.href='new-event.html'">
+  + Créer un nouvel événement
+</button>
+
+<script type="module">
+import { requireAuth, signOut,
+         saveSelectedEvent }   from "./js/api/auth.js";
+import { getAllEvents }        from "./js/api/events.js";
+
+// Vérifie la connexion — redirige si pas connecté
+await requireAuth();
+
+window.logout = async function () {
+  await signOut();
+};
+
+async function init() {
+  const events = await getAllEvents();
+  const list   = document.getElementById("events-list");
+
+  if (!events || events.length === 0) {
+    list.innerHTML = `<div class="empty">
+      Aucun événement trouvé.<br>Crée ton premier événement ci-dessous.
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = events.map(ev => `
+    <div class="event-card" onclick="selectEvent('${ev.id}', '${ev.nom.replace(/'/g, "\\'")}')">
+      <div>
+        <div class="event-nom">${ev.nom}</div>
+        <div class="event-meta">${ev.date || "Date non définie"} · ${ev.lieu || "Lieu non défini"}</div>
+      </div>
+      <div class="arrow">›</div>
+    </div>`).join("");
+}
+
+window.selectEvent = function (id, nom) {
+  saveSelectedEvent(id, nom);
+  window.location.href = "./index.html";  // ✅ chemin relatif
+};
+
+init();
+</script>
+</body>
+</html>

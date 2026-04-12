@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Plan de salle</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <img src="../assets/logoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <a class="nav-btn" href="../index.html">Tableau de bord</a>
+      <a class="nav-btn" href="guests.html">Invités</a>
+      <a class="nav-btn active" href="seating.html">Plan de salle</a>
+      <a class="nav-btn" href="checkin.html">Check-in</a>
+      <a class="nav-btn" href="qr.html">QR codes</a>
+      <a class="nav-btn" href="print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <div style="font-size:16px;font-weight:500">Plan de salle</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="autoAssign()">Assignation automatique</button>
+        <button class="btn btn-primary" onclick="openAddTable()">+ Ajouter une table</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;font-size:12px;color:#888;margin-bottom:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:50%;background:var(--teal)"></div>Table complète
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:50%;background:var(--amber)"></div>Partiellement occupée
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:50%;background:#ccc"></div>Table libre
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:10px;height:10px;border-radius:50%;background:var(--purple)"></div>Chaise occupée
+      </div>
+    </div>
+
+    <div class="floor-plan" id="floor-plan"></div>
+  </div>
+</div>
+
+<!-- Modal détail table -->
+<div class="modal-overlay" id="modal-table-detail">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="td-title">Détail table</div>
+      <button class="modal-close" onclick="closeTableDetail()">×</button>
+    </div>
+    <div id="td-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeTableDetail()">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal ajouter table -->
+<div class="modal-overlay" id="modal-add-table">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Ajouter une table</div>
+      <button class="modal-close" onclick="closeAddTable()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Nom de la table *</label>
+        <input type="text" id="t-name" placeholder="Table 7" />
+      </div>
+      <div class="form-group">
+        <label>Capacité (chaises) *</label>
+        <input type="number" id="t-cap" value="8" min="2" max="20" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAddTable()">Annuler</button>
+      <button class="btn btn-primary" id="btn-save-table" onclick="saveTable()">Créer</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth, requireEvent } from "../js/api/auth.js";
+const session = await requireAuth();   // redirige vers login si pas connecté
+const ev      = requireEvent();         // redirige vers select-event si pas choisi
+const EVENT_ID = ev.id;                // l'ID de l'événement sélectionné
+import { getGuests, assignSeat }  from "../js/api/guests.js";
+import { getTables, createTable } from "../js/api/tables.js";
+
+// ── Variables globales — déclarées UNE SEULE FOIS ici ─────────
+const POSITIONS = [
+  { x: 15, y: 5  }, { x: 40, y: 5  }, { x: 65, y: 5  }, { x: 88, y: 5  },
+  { x: 22, y: 50 }, { x: 55, y: 50 }, { x: 82, y: 50 },
+];
+
+let guests = [];
+let tables = [];
+
+// ── Chargement initial ────────────────────────────────────────
+async function init() {
+  [guests, tables] = await Promise.all([
+    getGuests(EVENT_ID),
+    getTables(EVENT_ID),
+  ]);
+  renderSeating();
+}
+
+// ── Rendu du plan de salle ────────────────────────────────────
+// ⚠️ Champs Supabase : t.nom, t.capacite, t.id
+// ⚠️ Le siège d'un invité vient de g.seats[0]
+function renderSeating() {
+  const fp = document.getElementById("floor-plan");
+  fp.innerHTML = "";
+
+  tables.forEach((t, i) => {
+    const pos = POSITIONS[i] || {
+      x: ((i % 4) * 24 + 8),
+      y: (Math.floor(i / 4) * 44 + 5)
+    };
+
+    // Invités assis à cette table (via la jointure seats → tables_salle)
+    const seated = guests.filter(g =>
+      g.seats && g.seats.some(s => s.table_id === t.id)
+    );
+
+    const pct  = seated.length / t.capacite;
+    const cls  = pct >= 1 ? "table-full" : pct > 0 ? "table-partial" : "table-empty";
+    const size = t.capacite <= 6 ? 80 : 96;
+
+    // Construit les chaises
+    let chairs = "";
+    for (let c = 1; c <= t.capacite; c++) {
+      const guestOnChair = seated.find(g =>
+        g.seats && g.seats.some(s => s.table_id === t.id && s.numero_chaise === c)
+      );
+      chairs += `<div class="chair${guestOnChair ? " taken" : ""}"
+        title="${guestOnChair ? guestOnChair.nom : "Libre"}"></div>`;
+    }
+
+    const div = document.createElement("div");
+    div.className  = `table-item ${cls}`;
+    div.style.left = pos.x + "%";
+    div.style.top  = pos.y + "%";
+    div.innerHTML  = `
+      <div class="table-circle" style="width:${size}px;height:${size}px">
+        <span style="font-size:11px;font-weight:500">${t.nom}</span>
+        <span style="font-size:10px">${seated.length}/${t.capacite}</span>
+      </div>
+      <div class="chairs-row" style="max-width:${size + 24}px">${chairs}</div>
+      <div class="table-label">${t.capacite} places</div>`;
+    div.onclick = () => showTableDetail(t.id);
+    fp.appendChild(div);
+  });
+}
+
+// ── Détail d'une table au clic ────────────────────────────────
+window.showTableDetail = function (tableId) {
+  const t      = tables.find(x => x.id === tableId);
+  const seated = guests.filter(g =>
+    g.seats && g.seats.some(s => s.table_id === tableId)
+  );
+
+  document.getElementById("td-title").textContent =
+    `${t.nom} — ${seated.length}/${t.capacite} places`;
+
+  document.getElementById("td-body").innerHTML = seated.length
+    ? seated.map(g => {
+        const seat   = g.seats.find(s => s.table_id === tableId);
+        const chaise = seat ? seat.numero_chaise : "?";
+        return `
+          <div style="display:flex;justify-content:space-between;padding:8px 0;
+                      border-bottom:0.5px solid #eee;font-size:13px">
+            <span style="font-weight:500">${g.nom}</span>
+            <span style="color:#888">
+              Chaise ${chaise}&nbsp;
+              <span class="badge ${g.categorie === "VIP" ? "badge-vip" : "badge-normal"}">
+                ${g.categorie}
+              </span>
+            </span>
+          </div>`;
+      }).join("")
+    : `<p style="color:#bbb;font-size:13px;padding:10px 0">
+         Aucun invité assigné à cette table.
+       </p>`;
+
+  document.getElementById("modal-table-detail").classList.add("open");
+};
+
+window.closeTableDetail = () =>
+  document.getElementById("modal-table-detail").classList.remove("open");
+window.openAddTable = () =>
+  document.getElementById("modal-add-table").classList.add("open");
+window.closeAddTable = () =>
+  document.getElementById("modal-add-table").classList.remove("open");
+
+// ── Créer une nouvelle table ──────────────────────────────────
+window.saveTable = async function () {
+  const nom      = document.getElementById("t-name").value.trim();
+  const capacite = parseInt(document.getElementById("t-cap").value);
+  if (!nom || !capacite) { alert("Remplir tous les champs."); return; }
+
+  const btn = document.getElementById("btn-save-table");
+  btn.disabled    = true;
+  btn.textContent = "Création...";
+
+  const result = await createTable(EVENT_ID, nom, capacite);
+
+  btn.disabled    = false;
+  btn.textContent = "Créer";
+
+  if (result) {
+    document.getElementById("t-name").value = "";
+    document.getElementById("t-cap").value  = "8";
+    closeAddTable();
+    init();
+  } else {
+    alert("Erreur lors de la création. Vérifie la console (F12).");
+  }
+};
+
+// ── Assignation automatique ───────────────────────────────────
+// Assigne les invités sans siège aux premières places libres
+window.autoAssign = async function () {
+  // Invités sans siège (pas d'entrée dans seats)
+  const unassigned = guests.filter(g =>
+    g.statut !== "absent" &&
+    (!g.seats || g.seats.length === 0)
+  );
+
+  if (unassigned.length === 0) {
+    alert("Tous les invités sont déjà assignés.");
+    return;
+  }
+
+  // Construit la liste des places libres pour chaque table
+  const freeSeats = [];
+  for (const t of tables) {
+    const takenChairs = guests
+      .filter(g => g.seats && g.seats.some(s => s.table_id === t.id))
+      .flatMap(g => g.seats.filter(s => s.table_id === t.id).map(s => s.numero_chaise));
+
+    for (let c = 1; c <= t.capacite; c++) {
+      if (!takenChairs.includes(c)) {
+        freeSeats.push({ table_id: t.id, numero_chaise: c });
+      }
+    }
+  }
+
+  if (freeSeats.length === 0) {
+    alert("Il n'y a plus de place disponible.");
+    return;
+  }
+
+  // Assigne chaque invité à une place libre
+  let count = 0;
+  for (let i = 0; i < unassigned.length && i < freeSeats.length; i++) {
+    const result = await assignSeat(
+      unassigned[i].id,
+      freeSeats[i].table_id,
+      freeSeats[i].numero_chaise
+    );
+    if (result) count++;
+  }
+
+  alert(count > 0
+    ? `${count} invité(s) assigné(s) automatiquement !`
+    : "Aucune assignation effectuée. Vérifie la console (F12)."
+  );
+
+  init(); // Recharge depuis Supabase
+};
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

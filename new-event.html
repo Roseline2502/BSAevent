@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Nouvel événement</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f5f3;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 600px;
+      margin: 0 auto 28px;
+    }
+    .logo-text { font-size: 18px; font-weight: 600; color: #7F77DD; }
+    .btn-back {
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 0.5px solid #ddd;
+      background: #fff;
+      font-size: 13px;
+      color: #888;
+      cursor: pointer;
+    }
+    .btn-back:hover { background: #f0f0ee; }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 600px;
+      margin: 0 auto;
+      border: 0.5px solid #e0e0de;
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: #1a1a1a;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 24px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 16px;
+    }
+    label {
+      font-size: 12px;
+      color: #888;
+      font-weight: 500;
+    }
+    input {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 0.5px solid #ccc;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #fff;
+      font-family: inherit;
+      transition: border-color .15s;
+    }
+    input:focus { outline: none; border-color: #7F77DD; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 11px;
+      border-radius: 8px;
+      border: none;
+      background: #7F77DD;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background .15s;
+    }
+    .btn-submit:hover    { background: #534AB7; }
+    .btn-submit:disabled { background: #b0adea; cursor: not-allowed; }
+    .error {
+      background: #FCEBEB;
+      color: #A32D2D;
+      font-size: 13px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-top: 12px;
+      display: none;
+    }
+    .error.visible { display: block; }
+    @media (max-width: 480px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo-text">BSAEvent</div>
+  <button class="btn-back"
+    onclick="window.location.href='./select-event.html'">
+    ← Retour
+  </button>
+</div>
+
+<div class="card">
+  <h2>Créer un nouvel événement</h2>
+  <p class="subtitle">
+    Les informations seront visibles sur toutes les pages de gestion
+  </p>
+
+  <div class="form-group">
+    <label>Nom de l'événement *</label>
+    <input type="text" id="ev-nom"
+      placeholder="Gala de fin d'année CAMTEL" />
+  </div>
+
+  <div class="form-grid">
+    <div class="form-group">
+      <label>Date</label>
+      <input type="date" id="ev-date" />
+    </div>
+    <div class="form-group">
+      <label>Lieu</label>
+      <input type="text" id="ev-lieu"
+        placeholder="Hilton Hôtel Douala" />
+    </div>
+  </div>
+
+  <button class="btn-submit" id="btn-create" onclick="creerEvenement()">
+    Créer l'événement
+  </button>
+
+  <div class="error" id="error-msg"></div>
+</div>
+
+<script type="module">
+import { requireAuth, saveSelectedEvent } from "./js/api/auth.js";
+import { createEvent }                    from "./js/api/events.js";
+
+// ── Protection ────────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+// ── Créer l'événement ─────────────────────────────────────────
+window.creerEvenement = async function () {
+  const nom  = document.getElementById("ev-nom").value.trim();
+  const date = document.getElementById("ev-date").value  || null;
+  const lieu = document.getElementById("ev-lieu").value.trim() || null;
+
+  const err = document.getElementById("error-msg");
+  const btn = document.getElementById("btn-create");
+
+  err.classList.remove("visible");
+
+  if (!nom) {
+    err.textContent = "Le nom de l'événement est obligatoire.";
+    err.classList.add("visible");
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = "Création en cours...";
+
+  const { data, error } = await createEvent({ nom, date, lieu });
+
+  if (error || !data) {
+    err.textContent = "Erreur lors de la création. Vérifie la console (F12).";
+    err.classList.add("visible");
+    btn.disabled    = false;
+    btn.textContent = "Créer l'événement";
+    return;
+  }
+
+  // Sélectionne automatiquement le nouvel événement créé
+  saveSelectedEvent(data.id, data.nom);
+
+  // Redirige vers le tableau de bord
+  window.location.href = "./index.html";
+};
+</script>
+</body>
+</html>

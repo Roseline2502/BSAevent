@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Invités</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <img src="../assets/logoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <a class="nav-btn" href="../index.html">Tableau de bord</a>
+      <a class="nav-btn active" href="guests.html">Invités</a>
+      <a class="nav-btn" href="seating.html">Plan de salle</a>
+      <a class="nav-btn" href="checkin.html">Check-in</a>
+      <a class="nav-btn" href="qr.html">QR codes</a>
+      <a class="nav-btn" href="print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+
+    <!-- ── Barre d'actions ── -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div style="font-size:16px;font-weight:500">Liste des invités</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="file" id="file-import" accept=".csv,.xlsx,.xls"
+          style="display:none" onchange="importFile(event)" />
+        <button class="btn"
+          onclick="document.getElementById('file-import').click()">
+          Importer CSV/Excel
+        </button>
+        <button class="btn" onclick="exportCSV()">Exporter CSV</button>
+        <button class="btn btn-primary" onclick="openAddModal()">+ Ajouter</button>
+      </div>
+    </div>
+
+    <!-- ── Filtres ── -->
+    <div class="search-bar">
+      <input type="text" id="search"
+        placeholder="Rechercher..." oninput="renderTable()" />
+      <select id="f-status" onchange="renderTable()">
+        <option value="">Tous les statuts</option>
+        <option value="confirmed">Confirmé</option>
+        <option value="pending">En attente</option>
+        <option value="absent">Absent</option>
+      </select>
+      <select id="f-cat" onchange="renderTable()">
+        <option value="">Toutes catégories</option>
+        <option value="VIP">VIP</option>
+        <option value="Normal">Normal</option>
+      </select>
+      <select id="f-rsvp" onchange="renderTable()">
+        <option value="">Tous les RSVP</option>
+        <option value="accepted">RSVP Oui</option>
+        <option value="declined">RSVP Non</option>
+        <option value="pending">En attente RSVP</option>
+      </select>
+    </div>
+
+    <!-- ── Tableau ── -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <table>
+        <thead><tr>
+          <th>Nom</th>
+          <th>Téléphone</th>
+          <th>Table</th>
+          <th>Chaise</th>
+          <th>Catégorie</th>
+          <th>Statut</th>
+          <th>RSVP</th>
+          <th>Actions</th>
+        </tr></thead>
+        <tbody id="guests-tbody">
+          <tr><td colspan="8" style="text-align:center;color:#bbb;padding:20px">
+            Chargement...
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Modal ajouter / modifier ── -->
+<div class="modal-overlay" id="modal-add">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Ajouter un invité</div>
+      <button class="modal-close" onclick="closeAddModal()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Nom complet *</label>
+        <input type="text" id="g-name" placeholder="Jean Dupont" />
+      </div>
+      <div class="form-group">
+        <label>Téléphone</label>
+        <input type="text" id="g-phone" placeholder="+237 6XX XXX XXX" />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="text" id="g-email" placeholder="email@exemple.com" />
+      </div>
+      <div class="form-group">
+        <label>Catégorie</label>
+        <select id="g-cat">
+          <option value="Normal">Normal</option>
+          <option value="VIP">VIP</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Statut</label>
+        <select id="g-status">
+          <option value="pending">En attente</option>
+          <option value="confirmed">Confirmé</option>
+          <option value="absent">Absent</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Table</label>
+        <select id="g-table" onchange="refreshChairs()">
+          <option value="">Non assigné</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Chaise N°</label>
+        <select id="g-chair">
+          <option value="">—</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAddModal()">Annuler</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveGuest()">
+        Enregistrer
+      </button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+
+// ── 1. Imports ────────────────────────────────────────────────
+import { requireAuth, requireEvent } from "../js/api/auth.js";
+import { getGuests, addGuest,
+         updateGuest, deleteGuest,
+         assignSeat, removeSeat,
+         getOccupiedSeats }          from "../js/api/guests.js";
+import { getTables }                 from "../js/api/tables.js";
+
+// ── 2. Protection ─────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+const ev = requireEvent();
+if (!ev) throw new Error("Aucun événement sélectionné");
+
+const EVENT_ID = ev.id;
+
+// ── 3. Variables globales ─────────────────────────────────────
+let guests    = [];
+let tables    = [];
+let editingId = null;
+
+// ── 4. Chargement initial ─────────────────────────────────────
+async function init() {
+  [guests, tables] = await Promise.all([
+    getGuests(EVENT_ID),
+    getTables(EVENT_ID),
+  ]);
+  renderTable();
+}
+
+// ── 5. Badge statut ───────────────────────────────────────────
+function badgeStatut(s) {
+  if (s === "confirmed") return `<span class="badge badge-present">Confirmé</span>`;
+  if (s === "absent")    return `<span class="badge badge-absent">Absent</span>`;
+  return                        `<span class="badge badge-pending">En attente</span>`;
+}
+
+// ── 6. Badge RSVP ─────────────────────────────────────────────
+function badgeRsvp(s) {
+  if (s === "accepted") return `<span class="badge badge-present">Oui</span>`;
+  if (s === "declined") return `<span class="badge badge-absent">Non</span>`;
+  return                       `<span class="badge badge-pending">En attente</span>`;
+}
+
+// ── 7. Rendu du tableau ───────────────────────────────────────
+window.renderTable = function () {
+  const q  = (document.getElementById("search").value || "").toLowerCase();
+  const fs = document.getElementById("f-status").value;
+  const fc = document.getElementById("f-cat").value;
+  const fr = document.getElementById("f-rsvp").value;
+
+  const list = guests.filter(g =>
+    (!q  || g.nom.toLowerCase().includes(q)) &&
+    (!fs || g.statut      === fs) &&
+    (!fc || g.categorie   === fc) &&
+    (!fr || (g.rsvp_status || "pending") === fr)
+  );
+
+  if (list.length === 0) {
+    document.getElementById("guests-tbody").innerHTML =
+      `<tr><td colspan="8"
+        style="text-align:center;color:#bbb;padding:20px">
+        Aucun invité trouvé.
+      </td></tr>`;
+    return;
+  }
+
+  document.getElementById("guests-tbody").innerHTML = list.map(g => {
+    const seat     = g.seats && g.seats[0] ? g.seats[0] : null;
+    const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+    const chaise   = seat ? seat.numero_chaise : null;
+
+    // rsvp_status peut être null si la colonne vient d'être ajoutée
+    const rsvpStatus = g.rsvp_status || "pending";
+
+    return `<tr>
+      <td style="font-weight:500">${g.nom}</td>
+      <td style="color:#888">${g.telephone || "—"}</td>
+      <td>${tableNom || "<span style='color:#bbb'>—</span>"}</td>
+      <td>${chaise   ? "N° " + chaise : "<span style='color:#bbb'>—</span>"}</td>
+      <td>
+        <span class="badge ${g.categorie === "VIP" ? "badge-vip" : "badge-normal"}">
+          ${g.categorie}
+        </span>
+      </td>
+      <td>${badgeStatut(g.statut)}</td>
+      <td>${badgeRsvp(rsvpStatus)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="editGuest('${g.id}')">Modifier</button>
+        <button class="btn btn-sm btn-danger" onclick="delGuest('${g.id}')">Suppr.</button>
+      </td>
+    </tr>`;
+  }).join("");
+};
+
+// ── 8. Ouvrir modal AJOUT ─────────────────────────────────────
+window.openAddModal = function () {
+  editingId = null;
+  document.getElementById("modal-title").textContent = "Ajouter un invité";
+  ["g-name", "g-phone", "g-email"].forEach(id =>
+    document.getElementById(id).value = ""
+  );
+  document.getElementById("g-cat").value    = "Normal";
+  document.getElementById("g-status").value = "pending";
+  populateTableSelect(null, null);
+  document.getElementById("modal-add").classList.add("open");
+};
+
+window.closeAddModal = () =>
+  document.getElementById("modal-add").classList.remove("open");
+
+// ── 9. Ouvrir modal MODIFICATION ─────────────────────────────
+window.editGuest = function (id) {
+  editingId  = id;
+  const g    = guests.find(x => x.id === id);
+  const seat = g.seats && g.seats[0] ? g.seats[0] : null;
+
+  document.getElementById("modal-title").textContent = "Modifier l'invité";
+  document.getElementById("g-name").value   = g.nom;
+  document.getElementById("g-phone").value  = g.telephone || "";
+  document.getElementById("g-email").value  = g.email     || "";
+  document.getElementById("g-cat").value    = g.categorie;
+  document.getElementById("g-status").value = g.statut;
+
+  populateTableSelect(
+    seat ? seat.table_id      : null,
+    seat ? seat.numero_chaise : null
+  );
+  document.getElementById("modal-add").classList.add("open");
+};
+
+// ── 10. Supprimer un invité ───────────────────────────────────
+window.delGuest = async function (id) {
+  if (!confirm("Supprimer cet invité ?")) return;
+  const ok = await deleteGuest(id);
+  if (ok) init();
+  else    alert("Erreur lors de la suppression. Vérifie la console (F12).");
+};
+
+// ── 11. Sauvegarder (ajout ou modification) ───────────────────
+window.saveGuest = async function () {
+  const nom = document.getElementById("g-name").value.trim();
+  if (!nom) { alert("Veuillez saisir un nom."); return; }
+
+  const telephone = document.getElementById("g-phone").value || null;
+  const email     = document.getElementById("g-email").value || null;
+  const categorie = document.getElementById("g-cat").value;
+  const statut    = document.getElementById("g-status").value;
+  const tableId   = document.getElementById("g-table").value || null;
+  const chaise    = parseInt(document.getElementById("g-chair").value) || null;
+
+  const btn = document.getElementById("btn-save");
+  btn.disabled    = true;
+  btn.textContent = "Enregistrement...";
+
+  if (editingId) {
+    await updateGuest(editingId, { nom, telephone, email, categorie, statut });
+    if (tableId && chaise) await assignSeat(editingId, tableId, chaise);
+    else                   await removeSeat(editingId);
+  } else {
+    const newGuest = await addGuest(EVENT_ID, {
+      nom, telephone, email, categorie, statut
+    });
+    if (newGuest && tableId && chaise) {
+      await assignSeat(newGuest.id, tableId, chaise);
+    }
+  }
+
+  btn.disabled    = false;
+  btn.textContent = "Enregistrer";
+  closeAddModal();
+  init();
+};
+
+// ── 12. Select tables ─────────────────────────────────────────
+function populateTableSelect(selectedTableId, selectedChaise) {
+  const ts = document.getElementById("g-table");
+  ts.innerHTML = `<option value="">Non assigné</option>`;
+  tables.forEach(t => {
+    const seated = guests.filter(g =>
+      g.seats && g.seats.some(s => s.table_id === t.id)
+    ).length;
+    const o = document.createElement("option");
+    o.value       = t.id;
+    o.textContent = t.nom + " (" + seated + "/" + t.capacite + ")";
+    if (t.id === selectedTableId) o.selected = true;
+    ts.appendChild(o);
+  });
+  refreshChairsForTable(selectedTableId, selectedChaise);
+}
+
+// ── 13. Rafraîchir les chaises ────────────────────────────────
+window.refreshChairs = function () {
+  const tableId = document.getElementById("g-table").value || null;
+  refreshChairsForTable(tableId, null);
+};
+
+async function refreshChairsForTable(tableId, preselectChaise) {
+  const cs = document.getElementById("g-chair");
+  cs.innerHTML = `<option value="">—</option>`;
+  if (!tableId) return;
+  const tbl = tables.find(x => x.id === tableId);
+  if (!tbl)  return;
+  const taken = await getOccupiedSeats(tableId, editingId);
+  for (let i = 1; i <= tbl.capacite; i++) {
+    if (!taken.includes(i)) {
+      const o = document.createElement("option");
+      o.value       = i;
+      o.textContent = "Chaise " + i;
+      if (i === preselectChaise) o.selected = true;
+      cs.appendChild(o);
+    }
+  }
+}
+
+// ── 14. Import CSV / Excel ────────────────────────────────────
+window.importFile = async function (event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const data     = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type: "array" });
+  const sheet    = workbook.Sheets[workbook.SheetNames[0]];
+  const rows     = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+  if (rows.length === 0) {
+    alert("Le fichier est vide ou non reconnu.");
+    return;
+  }
+
+  const colonnes = Object.keys(rows[0]).join(", ");
+  const ok = confirm(
+    rows.length + " ligne(s) détectée(s).\n" +
+    "Colonnes trouvées : " + colonnes + "\n\n" +
+    "Colonnes reconnues :\n" +
+    "- nom (obligatoire)\n" +
+    "- telephone\n" +
+    "- email\n" +
+    "- categorie (Normal ou VIP)\n" +
+    "- statut (pending / confirmed / absent)\n\n" +
+    "Continuer l'import ?"
+  );
+  if (!ok) return;
+
+  let success = 0;
+  let errors  = 0;
+
+  for (const row of rows) {
+    const nom = (
+      row["nom"] || row["Nom"] || row["NOM"] || ""
+    ).toString().trim();
+
+    const telephone = (
+      row["telephone"] || row["Téléphone"] || row["tel"] || row["Tel"] || ""
+    ).toString().trim();
+
+    const email = (
+      row["email"] || row["Email"] || row["EMAIL"] || ""
+    ).toString().trim();
+
+    const categorieRaw = (
+      row["categorie"] || row["Catégorie"] || row["cat"] || "Normal"
+    ).toString().trim();
+
+    const statutRaw = (
+      row["statut"] || row["Statut"] || row["status"] || "pending"
+    ).toString().trim();
+
+    if (!nom) { errors++; continue; }
+
+    const categorie = ["VIP", "Normal"].includes(categorieRaw) ? categorieRaw : "Normal";
+    const statut    = ["pending", "confirmed", "absent"].includes(statutRaw) ? statutRaw : "pending";
+
+    const result = await addGuest(EVENT_ID, {
+      nom,
+      telephone: telephone || null,
+      email:     email     || null,
+      categorie,
+      statut,
+    });
+
+    if (result) success++;
+    else        errors++;
+  }
+
+  event.target.value = "";
+  alert(
+    "Import terminé !\n" +
+    success + " invité(s) ajouté(s)\n" +
+    errors  + " ligne(s) ignorée(s)"
+  );
+  init();
+};
+
+// ── 15. Export CSV ────────────────────────────────────────────
+window.exportCSV = function () {
+  const rows = [
+    "Nom,Téléphone,Email,Catégorie,Statut,RSVP,Table,Chaise,Arrivé",
+    ...guests.map(g => {
+      const seat     = g.seats && g.seats[0] ? g.seats[0] : null;
+      const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : "";
+      const chaise   = seat ? seat.numero_chaise : "";
+      const rsvp     = g.rsvp_status === "accepted" ? "Oui"
+                     : g.rsvp_status === "declined"  ? "Non"
+                     : "En attente";
+      return [
+        g.nom,
+        g.telephone || "",
+        g.email     || "",
+        g.categorie,
+        g.statut,
+        rsvp,
+        tableNom,
+        chaise,
+        g.arrived ? "Oui" : "Non"
+      ].join(",");
+    })
+  ];
+  const a    = document.createElement("a");
+  a.href     = URL.createObjectURL(
+    new Blob([rows.join("\n")], { type: "text/csv" })
+  );
+  a.download = "invites.csv";
+  a.click();
+};
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+
+</script>
+</body>
+</html>

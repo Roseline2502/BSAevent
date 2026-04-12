@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>BSAEvent — Accueil Staff</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f2f2f7; min-height: 100vh; }
+
+    .header       { background: #7F77DD; color: #fff; padding: 16px;
+                    position: sticky; top: 0; z-index: 10; }
+    .header-event { font-size: 11px; opacity: .8; margin-bottom: 2px; }
+    .header-title { font-size: 18px; font-weight: 600; }
+    .header-count { font-size: 13px; opacity: .85; margin-top: 3px; }
+    .header-bar   { height: 4px; background: rgba(255,255,255,.3); border-radius: 2px;
+                    margin-top: 10px; overflow: hidden; }
+    .header-fill  { height: 100%; background: #fff; border-radius: 2px; transition: width .4s; }
+
+    .search-wrap  { padding: 12px; background: #f2f2f7;
+                    position: sticky; top: 100px; z-index: 9; }
+    .search-input { width: 100%; padding: 11px 16px; border-radius: 24px;
+                    border: 1px solid #ddd; background: #fff;
+                    font-size: 15px; color: #1a1a1a; }
+    .search-input:focus { outline: none; border-color: #7F77DD; }
+
+    .list  { padding: 0 12px 90px; }
+    .item  { background: #fff; border-radius: 14px; padding: 13px; margin-bottom: 8px;
+             display: flex; align-items: center; gap: 12px; border: 1px solid #eee; }
+
+    .av        { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+                 display: flex; align-items: center; justify-content: center;
+                 font-size: 14px; font-weight: 600; }
+    .av-vip    { background: #EEEDFE; color: #534AB7; }
+    .av-normal { background: #F1EFE8; color: #5F5E5A; }
+
+    .info  { flex: 1; min-width: 0; }
+    .iname { font-size: 14px; font-weight: 600; color: #1a1a1a;
+             display: flex; align-items: center; gap: 6px; }
+    .isub  { font-size: 12px; color: #999; margin-top: 3px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .vip-pill  { background: #EEEDFE; color: #534AB7; font-size: 10px; font-weight: 600;
+                 padding: 2px 6px; border-radius: 8px; }
+
+    .btn-check { padding: 8px 14px; border-radius: 20px; border: none;
+                 cursor: pointer; font-size: 12px; font-weight: 600;
+                 transition: all .15s; white-space: nowrap; }
+    .btn-todo  { background: #7F77DD; color: #fff; }
+    .btn-todo:active { background: #534AB7; transform: scale(.97); }
+    .btn-done  { background: #EAF3DE; color: #3B6D11; }
+
+    .dot      { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-done { background: #1D9E75; }
+    .dot-todo { background: #ddd; }
+
+    .bottombar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
+                 border-top: 1px solid #eee; padding: 10px 0 20px;
+                 display: flex; justify-content: space-around; }
+    .tab       { display: flex; flex-direction: column; align-items: center; gap: 3px;
+                 font-size: 10px; color: #999; cursor: pointer;
+                 padding: 4px 16px; border-radius: 8px; }
+    .tab.active { color: #7F77DD; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-event" id="event-label">Chargement...</div>
+  <div class="header-title">Accueil invités</div>
+  <div class="header-count" id="count-label">—</div>
+  <div class="header-bar">
+    <div class="header-fill" id="progress-fill" style="width:0%"></div>
+  </div>
+</div>
+
+<div class="search-wrap">
+  <input class="search-input" type="search" id="mob-search"
+    placeholder="Rechercher un invité..." oninput="render()" autocomplete="off" />
+</div>
+
+<div class="list" id="mob-list">
+  <div style="color:#bbb;font-size:13px;padding:20px 12px">Chargement...</div>
+</div>
+
+<div class="bottombar">
+  <div class="tab active">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="2" width="7" height="7" rx="2" fill="currentColor"/>
+      <rect x="11" y="2" width="7" height="7" rx="2" fill="currentColor"/>
+      <rect x="2" y="11" width="7" height="7" rx="2" fill="currentColor"/>
+      <rect x="11" y="11" width="7" height="7" rx="2" fill="currentColor"/>
+    </svg>
+    Accueil
+  </div>
+  <div class="tab" onclick="location.href='checkin.html'">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M10 7v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    Check-in
+  </div>
+  <div class="tab" onclick="location.href='../index.html'">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M3 17c0-2.5 3-4.5 7-4.5s7 2 7 4.5" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="10" cy="7" r="3.5" stroke="currentColor" stroke-width="1.5"/>
+    </svg>
+    Dashboard
+  </div>
+</div>
+
+<script type="module">
+// ── 1. Tous les imports D'ABORD ───────────────────────────────
+import { requireAuth, requireEvent } from "../js/api/auth.js";
+import { getEvent }                  from "../js/api/events.js";
+import { getGuests }                 from "../js/api/guests.js";
+import { checkIn, cancelCheckIn,
+         subscribeToCheckIn }        from "../js/api/checkin.js";
+
+// ── 2. Protection ─────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+const ev = requireEvent();
+if (!ev) throw new Error("Aucun événement sélectionné");
+
+const EVENT_ID = ev.id;
+
+// ── 3. Cache local ────────────────────────────────────────────
+let allGuests = [];
+
+// ── 4. Initiales avatar ───────────────────────────────────────
+function initials(nom) {
+  return nom.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase();
+}
+
+// ── 5. Compteur + barre ───────────────────────────────────────
+function updateCounter() {
+  const arrived = allGuests.filter(g => g.arrived).length;
+  const total   = allGuests.length;
+  const pct     = total ? Math.round(arrived / total * 100) : 0;
+  document.getElementById("count-label").textContent   = `${arrived} / ${total} présents`;
+  document.getElementById("progress-fill").style.width = pct + "%";
+}
+
+// ── 6. Rendu de la liste ──────────────────────────────────────
+// ⚠️ Champs Supabase : g.nom, g.telephone, g.categorie
+// ⚠️ Siège via g.seats[0]
+// ⚠️ UUID entre guillemets dans onclick
+window.render = function () {
+  const q    = (document.getElementById("mob-search").value || "").toLowerCase();
+  const list = allGuests.filter(g => !q || g.nom.toLowerCase().includes(q));
+
+  updateCounter();
+
+  document.getElementById("mob-list").innerHTML = list.map(g => {
+    const seat      = g.seats && g.seats[0] ? g.seats[0] : null;
+    const tableNom  = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+    const chaise    = seat ? seat.numero_chaise : null;
+    const placement = tableNom
+      ? `${tableNom} · Chaise ${chaise}`
+      : "Non assigné";
+
+    return `
+      <div class="item">
+        <div class="dot ${g.arrived ? "dot-done" : "dot-todo"}"></div>
+        <div class="av ${g.categorie === "VIP" ? "av-vip" : "av-normal"}">
+          ${initials(g.nom)}
+        </div>
+        <div class="info">
+          <div class="iname">
+            ${g.nom}
+            ${g.categorie === "VIP" ? '<span class="vip-pill">VIP</span>' : ""}
+          </div>
+          <div class="isub">
+            ${placement} · ${g.telephone || "—"}
+          </div>
+        </div>
+        <button class="btn-check ${g.arrived ? "btn-done" : "btn-todo"}"
+                onclick="toggle('${g.id}', ${g.arrived})">
+          ${g.arrived ? "Présent ✓" : "Valider"}
+        </button>
+      </div>`;
+  }).join("");
+};
+
+// ── 7. Valider ou annuler arrivée ─────────────────────────────
+window.toggle = async function (id, isArrived) {
+  const g = allGuests.find(x => x.id === id);
+  if (g) g.arrived = !isArrived;
+  render();
+
+  const result = isArrived
+    ? await cancelCheckIn(id)
+    : await checkIn(id);
+
+  if (!result) {
+    if (g) g.arrived = isArrived;
+    render();
+    alert("Erreur. Vérifie la connexion.");
+  }
+};
+
+// ── 8. Chargement initial ─────────────────────────────────────
+async function init() {
+  const [event, guests] = await Promise.all([
+    getEvent(EVENT_ID),
+    getGuests(EVENT_ID),
+  ]);
+
+  // Affiche le nom de l'événement dans le header
+  if (event) {
+    const label = event.nom.includes("—")
+      ? event.nom.split("—")[1].trim()
+      : event.nom;
+    document.getElementById("event-label").textContent = label;
+  }
+
+  allGuests = guests;
+  render();
+
+  // Temps réel — mise à jour si autre appareil valide une arrivée
+  subscribeToCheckIn(EVENT_ID, (updated) => {
+    const g = allGuests.find(x => x.id === updated.id);
+    if (g) {
+      g.arrived    = updated.arrived;
+      g.arrived_at = updated.arrived_at;
+    }
+    render();
+  });
+}
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

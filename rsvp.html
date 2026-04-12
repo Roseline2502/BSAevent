@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Confirmation de présence</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f5f3;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 420px;
+      border: 0.5px solid #e0e0de;
+      text-align: center;
+    }
+    .logo-text   { font-size: 20px; font-weight: 700; color: #7F77DD; margin-bottom: 24px; }
+    .event-name  { font-size: 14px; color: #888; margin-bottom: 6px; }
+    .guest-name  { font-size: 22px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }
+    .guest-detail{ font-size: 13px; color: #aaa; margin-bottom: 28px; }
+    .info-box    { background: #f5f5f3; border-radius: 10px; padding: 14px;
+                   margin-bottom: 24px; text-align: left; }
+    .info-row    { display: flex; justify-content: space-between; font-size: 13px;
+                   padding: 4px 0; border-bottom: 0.5px solid #eee; }
+    .info-row:last-child { border-bottom: none; }
+    .info-lbl    { color: #888; }
+    .info-val    { font-weight: 500; color: #1a1a1a; }
+    .question    { font-size: 15px; font-weight: 500; color: #1a1a1a; margin-bottom: 16px; }
+    .btn-group   { display: flex; gap: 12px; }
+    .btn         { flex: 1; padding: 13px; border-radius: 10px; border: none;
+                   font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .btn:active  { transform: scale(.97); }
+    .btn-yes     { background: #1D9E75; color: #fff; }
+    .btn-yes:hover { background: #0F6E56; }
+    .btn-no      { background: #FCEBEB; color: #A32D2D; }
+    .btn-no:hover{ background: #f7c1c1; }
+    .btn:disabled{ opacity: .5; cursor: not-allowed; }
+    .result         { display: none; padding: 20px; border-radius: 10px; margin-top: 16px; }
+    .result.accepted{ background: #EAF3DE; color: #3B6D11; display: block; }
+    .result.declined{ background: #FCEBEB; color: #A32D2D; display: block; }
+    .result-icon    { font-size: 36px; margin-bottom: 8px; }
+    .result-title   { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .result-msg     { font-size: 13px; opacity: .8; }
+    .loading        { color: #aaa; font-size: 14px; padding: 40px 0; }
+    .error-msg      { color: #A32D2D; font-size: 13px; padding: 20px 0; }
+  </style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="logo-text">BSAEvent</div>
+  <div class="loading" id="loading">Chargement...</div>
+</div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+import { SUPABASE_URL, SUPABASE_KEY } from "./js/config.js";
+
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── Récupère l'ID invité depuis l'URL ─────────────────────────
+const params  = new URLSearchParams(window.location.search);
+const guestId = params.get("id");
+
+// ── Vérifie que l'UUID est présent ────────────────────────────
+if (!guestId) {
+  document.getElementById("loading").innerHTML =
+    "<div class='error-msg'>Lien invalide. Contacte l'organisateur.</div>";
+  throw new Error("Pas d'ID invité dans l'URL");
+}
+
+// ── Charge l'invité depuis Supabase ──────────────────────────
+// On fait deux requêtes séparées car la jointure events
+// via guests.event_id peut ne pas être reconnue automatiquement
+async function loadGuest() {
+  console.log("Chargement de l'invité:", guestId);
+
+  // Requête 1 — invité + siège
+  const { data: guest, error: guestError } = await supabase
+    .from("guests")
+    .select(`
+      id,
+      nom,
+      telephone,
+      email,
+      categorie,
+      statut,
+      rsvp_status,
+      rsvp_at,
+      event_id,
+      seats (
+        numero_chaise,
+        table_id,
+        tables_salle ( nom )
+      )
+    `)
+    .eq("id", guestId)
+    .single();
+
+  console.log("Guest:", guest);
+  console.log("Erreur:", guestError);
+
+  if (guestError || !guest) {
+    document.getElementById("loading").innerHTML =
+      "<div class='error-msg'>Invité introuvable. Vérifie ton lien.</div>";
+    return;
+  }
+
+  // Requête 2 — événement séparé
+  let event = {};
+  if (guest.event_id) {
+    const { data: ev, error: evError } = await supabase
+      .from("events")
+      .select("nom, date, lieu")
+      .eq("id", guest.event_id)
+      .single();
+
+    console.log("Event:", ev);
+    console.log("Event erreur:", evError);
+
+    if (ev) event = ev;
+  }
+
+  guest.eventData = event;
+  renderPage(guest);
+}
+
+// ── Affiche la page selon l'état du RSVP ─────────────────────
+function renderPage(guest) {
+  const seat     = guest.seats && guest.seats[0] ? guest.seats[0] : null;
+  const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+  const chaise   = seat ? seat.numero_chaise : null;
+  const event    = guest.eventData || {};
+  const card     = document.getElementById("card");
+
+  if (guest.rsvp_status === "accepted" || guest.rsvp_status === "declined") {
+    card.innerHTML = buildResult(guest, event, tableNom, chaise, true);
+    return;
+  }
+
+  card.innerHTML = buildForm(guest, event, tableNom, chaise);
+}
+
+// ── Formulaire de confirmation ────────────────────────────────
+function buildForm(guest, event, tableNom, chaise) {
+  return [
+    "<div class='logo-text'>BSAEvent</div>",
+    "<div class='event-name'>" + (event.nom || "Événement") + "</div>",
+    "<div class='guest-name'>" + guest.nom + "</div>",
+    "<div class='guest-detail'>" + (guest.categorie === "VIP" ? "Invité VIP" : "Invité") + "</div>",
+    "<div class='info-box'>",
+      "<div class='info-row'>",
+        "<span class='info-lbl'>Date</span>",
+        "<span class='info-val'>" + (event.date || "—") + "</span>",
+      "</div>",
+      "<div class='info-row'>",
+        "<span class='info-lbl'>Lieu</span>",
+        "<span class='info-val'>" + (event.lieu || "—") + "</span>",
+      "</div>",
+      "<div class='info-row'>",
+        "<span class='info-lbl'>Table</span>",
+        "<span class='info-val'>" + (tableNom || "Non assignée") + "</span>",
+      "</div>",
+      "<div class='info-row'>",
+        "<span class='info-lbl'>Chaise</span>",
+        "<span class='info-val'>" + (chaise ? "N° " + chaise : "—") + "</span>",
+      "</div>",
+    "</div>",
+    "<div class='question'>Serez-vous présent(e) ?</div>",
+    "<div class='btn-group'>",
+      "<button class='btn btn-yes' id='btn-yes' onclick='respond(true)'>",
+        "Oui, je serai là",
+      "</button>",
+      "<button class='btn btn-no' id='btn-no' onclick='respond(false)'>",
+        "Non, je ne peux pas",
+      "</button>",
+    "</div>",
+    "<div id='rsvp-result'></div>",
+  ].join("");
+}
+
+// ── Écran de résultat ─────────────────────────────────────────
+function buildResult(guest, event, tableNom, chaise, alreadyAnswered) {
+  const accepted = guest.rsvp_status === "accepted";
+  const icon     = accepted ? "✅" : "❌";
+  const title    = accepted ? "Présence confirmée !" : "Absence notée";
+  const msg      = accepted
+    ? "Nous vous attendons" + (event.date ? " le " + event.date : "")
+      + (tableNom ? " à la " + tableNom : "") + "."
+    : "Merci pour votre réponse. L'organisateur en a été informé.";
+  const note = alreadyAnswered
+    ? "<div style='font-size:11px;color:#aaa;margin-top:8px'>Vous avez déjà répondu.</div>"
+    : "";
+
+  return [
+    "<div class='logo-text'>BSAEvent</div>",
+    "<div class='event-name'>" + (event.nom || "Événement") + "</div>",
+    "<div class='guest-name'>" + guest.nom + "</div>",
+    "<div class='result " + (accepted ? "accepted" : "declined") + "'>",
+      "<div class='result-icon'>" + icon + "</div>",
+      "<div class='result-title'>" + title + "</div>",
+      "<div class='result-msg'>" + msg + "</div>",
+      note,
+    "</div>",
+  ].join("");
+}
+
+// ── Envoi de la réponse RSVP ──────────────────────────────────
+window.respond = async function (accepted) {
+  const btnYes = document.getElementById("btn-yes");
+  const btnNo  = document.getElementById("btn-no");
+  if (btnYes) btnYes.disabled = true;
+  if (btnNo)  btnNo.disabled  = true;
+
+  const status = accepted ? "accepted" : "declined";
+
+  // Mise à jour du statut RSVP
+  const { data, error } = await supabase
+    .from("guests")
+    .update({
+      rsvp_status: status,
+      rsvp_at:     new Date().toISOString(),
+      statut:      accepted ? "confirmed" : "absent",
+    })
+    .eq("id", guestId)
+    .select(`
+      id,
+      nom,
+      telephone,
+      email,
+      categorie,
+      statut,
+      rsvp_status,
+      event_id,
+      seats (
+        numero_chaise,
+        table_id,
+        tables_salle ( nom )
+      )
+    `)
+    .single();
+
+  if (error || !data) {
+    console.error("Erreur respond:", error);
+    document.getElementById("rsvp-result").innerHTML =
+      "<div class='error-msg' style='margin-top:16px'>" +
+      "Erreur. Réessaie ou contacte l'organisateur." +
+      "</div>";
+    if (btnYes) btnYes.disabled = false;
+    if (btnNo)  btnNo.disabled  = false;
+    return;
+  }
+
+  // Charge l'événement séparément
+  let event = {};
+  if (data.event_id) {
+    const { data: ev } = await supabase
+      .from("events")
+      .select("nom, date, lieu")
+      .eq("id", data.event_id)
+      .single();
+    if (ev) event = ev;
+  }
+
+  data.eventData = event;
+
+  const seat     = data.seats && data.seats[0] ? data.seats[0] : null;
+  const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+  const chaise   = seat ? seat.numero_chaise : null;
+
+  document.getElementById("card").innerHTML =
+    buildResult(data, event, tableNom, chaise, false);
+};
+
+// ── Démarrage ─────────────────────────────────────────────────
+loadGuest();
+</script>
+</body>
+</html>

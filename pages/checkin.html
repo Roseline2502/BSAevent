@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Check-in</title>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <img src="../assets/logoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <a class="nav-btn" href="../index.html">Tableau de bord</a>
+      <a class="nav-btn" href="guests.html">Invités</a>
+      <a class="nav-btn" href="seating.html">Plan de salle</a>
+      <a class="nav-btn active" href="checkin.html">Check-in</a>
+      <a class="nav-btn" href="qr.html">QR codes</a>
+      <a class="nav-btn" href="print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:16px;font-weight:500">Check-in en temps réel</div>
+        <!-- Indicateur connexion live -->
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+          <div id="live-dot"
+               style="width:7px;height:7px;border-radius:50%;background:#ccc;
+                      transition:background .3s"></div>
+          <span id="live-label" style="font-size:12px;color:#aaa">Connexion...</span>
+        </div>
+      </div>
+      <div style="font-size:13px;font-weight:500;color:#888" id="checkin-count">—</div>
+    </div>
+
+    <!-- Barre de progression -->
+    <div style="margin-bottom:16px">
+      <div class="progress-bar" style="height:8px">
+        <div class="progress-fill" id="checkin-progress"
+             style="width:0%;background:var(--teal);transition:width .4s"></div>
+      </div>
+    </div>
+
+    <div class="search-bar">
+      <input type="text" id="checkin-search"
+        placeholder="Rechercher un invité pour valider son arrivée..."
+        oninput="filterList()" />
+    </div>
+
+    <div id="checkin-list">
+      <div style="color:#bbb;font-size:13px;padding:20px 0">Chargement...</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth, requireEvent } from "../js/api/auth.js";
+const session = await requireAuth();   // redirige vers login si pas connecté
+const ev      = requireEvent();         // redirige vers select-event si pas choisi
+const EVENT_ID = ev.id;                // l'ID de l'événement sélectionné
+import { getGuests }                       from "../js/api/guests.js";
+import { checkIn, cancelCheckIn,
+         subscribeToCheckIn }              from "../js/api/checkin.js";
+
+// ── Cache local — UN seul tableau, bien nommé ─────────────────
+let allGuests = [];
+
+// ── Initiales pour l'avatar ───────────────────────────────────
+function initials(nom) {
+  return nom.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase();
+}
+
+// ── Mise à jour du compteur et de la barre ────────────────────
+function updateCounter() {
+  const arrived = allGuests.filter(g => g.arrived).length;
+  const total   = allGuests.length;
+  const pct     = total ? Math.round(arrived / total * 100) : 0;
+
+  document.getElementById("checkin-count").textContent    = `${arrived} / ${total} présents`;
+  document.getElementById("checkin-progress").style.width = pct + "%";
+}
+
+// ── Rendu de la liste filtrée ─────────────────────────────────
+// ⚠️ Champs Supabase : g.nom, g.telephone, g.categorie, g.statut
+// ⚠️ Siège : g.seats[0].tables_salle.nom + g.seats[0].numero_chaise
+window.filterList = function () {
+  const q    = (document.getElementById("checkin-search").value || "").toLowerCase();
+  const list = allGuests.filter(g => !q || g.nom.toLowerCase().includes(q));
+
+  document.getElementById("checkin-list").innerHTML = list.map(g => {
+    const seat      = g.seats && g.seats[0] ? g.seats[0] : null;
+    const tableNom  = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+    const chaise    = seat ? seat.numero_chaise : null;
+    const placement = tableNom
+      ? `${tableNom} · Chaise ${chaise}`
+      : "Non assigné";
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;
+                  padding:12px 14px;border-radius:10px;border:0.5px solid #eee;
+                  background:#fff;margin-bottom:8px;gap:10px;flex-wrap:wrap">
+
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:42px;height:42px;border-radius:50%;flex-shrink:0;
+                      display:flex;align-items:center;justify-content:center;
+                      font-size:13px;font-weight:600;
+                      background:${g.categorie === "VIP" ? "#EEEDFE" : "#F1EFE8"};
+                      color:${g.categorie === "VIP" ? "#534AB7" : "#5F5E5A"}">
+            ${initials(g.nom)}
+          </div>
+          <div>
+            <div style="font-weight:500;font-size:13px;
+                        display:flex;align-items:center;gap:6px">
+              ${g.nom}
+              ${g.categorie === "VIP"
+                ? `<span class="badge badge-vip" style="font-size:10px">VIP</span>`
+                : ""}
+            </div>
+            <div style="font-size:12px;color:#999;margin-top:2px">
+              ${placement} &nbsp;·&nbsp; ${g.telephone || "—"}
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge ${g.arrived ? "badge-present" : "badge-pending"}">
+            ${g.arrived ? "Arrivé" : "En attente"}
+          </span>
+          <!-- ⚠️ On passe l'UUID entre guillemets et l'état arrived actuel -->
+          <button class="btn btn-sm ${g.arrived ? "btn-danger" : "btn-success"}"
+                  onclick="toggleArrival('${g.id}', ${g.arrived})">
+            ${g.arrived ? "Annuler" : "Valider arrivée"}
+          </button>
+        </div>
+
+      </div>`;
+  }).join("");
+};
+
+// ── Valider ou annuler une arrivée ────────────────────────────
+window.toggleArrival = async function (id, isArrived) {
+  // Mise à jour optimiste : UI immédiate avant réponse serveur
+  const g = allGuests.find(x => x.id === id);
+  if (g) g.arrived = !isArrived;
+  filterList();
+  updateCounter();
+
+  // Appel Supabase
+  const result = isArrived
+    ? await cancelCheckIn(id)
+    : await checkIn(id);
+
+  // Si erreur : on annule la mise à jour optimiste
+  if (!result) {
+    if (g) g.arrived = isArrived;
+    filterList();
+    updateCounter();
+    alert("Erreur lors de la mise à jour. Vérifie la console (F12).");
+  }
+};
+
+// ── Chargement initial + temps réel ──────────────────────────
+async function init() {
+  // 1. Charge tous les invités depuis Supabase
+  allGuests = await getGuests(EVENT_ID);
+  filterList();
+  updateCounter();
+
+  // 2. Écoute les mises à jour en temps réel
+  // (quand un autre appareil valide une arrivée)
+  subscribeToCheckIn(EVENT_ID, (updated) => {
+    const g = allGuests.find(x => x.id === updated.id);
+    if (g) {
+      g.arrived    = updated.arrived;
+      g.arrived_at = updated.arrived_at;
+    }
+    filterList();
+    updateCounter();
+  });
+
+  // 3. Affiche l'indicateur de connexion live
+  document.getElementById("live-dot").style.background = "#1D9E75";
+  document.getElementById("live-label").textContent    = "Synchronisation en direct active";
+}
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

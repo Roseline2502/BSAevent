@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — QR Codes</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .qr-grid  { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .qr-card  { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 12px;
+                text-align: center; cursor: pointer; transition: border-color .15s; position: relative; }
+    .qr-card:hover { border-color: var(--purple); }
+    .qr-card.vip   { border-width: 2px; border-color: var(--purple); }
+    .qr-name  { font-size: 11px; font-weight: 500; margin-top: 8px; color: #222;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .qr-sub   { font-size: 10px; color: #999; margin-top: 2px; }
+    .vip-badge{ position: absolute; top: 5px; right: 5px; background: var(--purple);
+                color: #fff; font-size: 8px; font-weight: 600; padding: 2px 5px; border-radius: 4px; }
+    .qr-img   { display: block; margin: 0 auto; border: 1px solid #eee; border-radius: 4px; }
+    .ticket-modal { display: flex; gap: 16px; align-items: flex-start; }
+    @media (max-width: 480px) { .ticket-modal { flex-direction: column; align-items: center; } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <img src="../assets/logoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <a class="nav-btn" href="../index.html">Tableau de bord</a>
+      <a class="nav-btn" href="guests.html">Invités</a>
+      <a class="nav-btn" href="seating.html">Plan de salle</a>
+      <a class="nav-btn" href="checkin.html">Check-in</a>
+      <a class="nav-btn active" href="qr.html">QR codes</a>
+      <a class="nav-btn" href="print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:16px;font-weight:500">QR codes — Cartons d'invitation</div>
+        <div style="font-size:12px;color:#888;margin-top:2px">
+          Cliquer sur un invité pour voir et imprimer son carton
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:14px">
+      <div class="stat">
+        <div class="stat-val" id="qr-total" style="color:var(--purple)">—</div>
+        <div class="stat-lbl">Total QR</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="qr-vip" style="color:#534AB7">—</div>
+        <div class="stat-lbl">VIP</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="qr-assigned" style="color:var(--teal)">—</div>
+        <div class="stat-lbl">Avec table assignée</div>
+      </div>
+    </div>
+
+    <div class="search-bar">
+      <input type="text" id="qr-search"
+        placeholder="Filtrer les invités..."
+        oninput="renderQR()" />
+    </div>
+
+    <div id="qr-grid" class="qr-grid"></div>
+  </div>
+</div>
+
+<!-- Modal carton d'invitation -->
+<div class="modal-overlay" id="modal-ticket">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="ticket-title">Carton d'invitation</div>
+      <button class="modal-close" onclick="closeTicket()">×</button>
+    </div>
+    <div id="ticket-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeTicket()">Fermer</button>
+      <button class="btn btn-primary" onclick="printTicket()">Imprimer ce carton</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── 1. Imports ────────────────────────────────────────────────
+import { requireAuth, requireEvent } from "../js/api/auth.js";
+import { getGuests }                 from "../js/api/guests.js";
+
+// ── 2. Protection ─────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+const ev = requireEvent();
+if (!ev) throw new Error("Aucun événement sélectionné");
+
+const EVENT_ID = ev.id;
+
+// ── 3. Variables ──────────────────────────────────────────────
+let allGuests      = [];
+let currentGuestId = null;
+
+// ── 4. URL du QR code (service externe, aucune librairie) ─────
+function qrUrl(text, size) {
+  return "https://api.qrserver.com/v1/create-qr-code/?size=" + size + "x" + size
+       + "&data=" + encodeURIComponent(text)
+       + "&bgcolor=ffffff&color=222222&margin=4";
+}
+
+// ── 5. Données encodées dans le QR ───────────────────────────
+function qrData(g) {
+  // L'URL que l'invité verra en scannant le QR
+  // En production remplace par ton vrai domaine
+  const base = window.location.origin
+    + window.location.pathname.replace("pages/qr.html", "");
+  return base + "rsvp.html?id=" + g.id;
+}
+
+// ── 6. Créer une image QR (pas de template literal) ──────────
+function makeQRImg(text, size, altText) {
+  const img   = document.createElement("img");
+  img.src     = qrUrl(text, size);
+  img.width   = size;
+  img.height  = size;
+  img.alt     = altText || "QR Code";
+  img.className = "qr-img";
+  img.onerror = function () {
+    const div = document.createElement("div");
+    div.style.cssText = "font-size:9px;color:#bbb;padding:8px";
+    div.textContent   = "QR indisponible";
+    this.replaceWith(div);
+  };
+  return img;
+}
+
+// ── 7. Rendu de la grille ────────────────────────────────────
+window.renderQR = function () {
+  const q    = (document.getElementById("qr-search").value || "").toLowerCase();
+  const list = allGuests.filter(function(g) {
+    return !q || g.nom.toLowerCase().includes(q);
+  });
+
+  document.getElementById("qr-total").textContent = allGuests.length;
+  document.getElementById("qr-vip").textContent   =
+    allGuests.filter(function(g) { return g.categorie === "VIP"; }).length;
+  document.getElementById("qr-assigned").textContent =
+    allGuests.filter(function(g) { return g.seats && g.seats.length > 0; }).length;
+
+  const grid = document.getElementById("qr-grid");
+  grid.innerHTML = "";
+
+  if (list.length === 0) {
+    const msg = document.createElement("div");
+    msg.style.cssText = "color:#bbb;font-size:13px;padding:20px 0;grid-column:1/-1";
+    msg.textContent   = "Aucun invité trouvé.";
+    grid.appendChild(msg);
+    return;
+  }
+
+  list.forEach(function(g) {
+    const seat     = g.seats && g.seats[0] ? g.seats[0] : null;
+    const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+    const chaise   = seat ? seat.numero_chaise : null;
+
+    // Card
+    const card = document.createElement("div");
+    card.className = "qr-card" + (g.categorie === "VIP" ? " vip" : "");
+
+    // Badge VIP
+    if (g.categorie === "VIP") {
+      const badge = document.createElement("div");
+      badge.className   = "vip-badge";
+      badge.textContent = "VIP";
+      card.appendChild(badge);
+    }
+
+    // Image QR
+    card.appendChild(makeQRImg(qrData(g), 80, g.nom));
+
+    // Nom
+    const nameEl = document.createElement("div");
+    nameEl.className   = "qr-name";
+    nameEl.textContent = g.nom;
+    card.appendChild(nameEl);
+
+    // Sous-titre
+    const subEl = document.createElement("div");
+    subEl.className   = "qr-sub";
+    subEl.textContent = tableNom
+      ? tableNom + " · Ch." + chaise
+      : "Non assigné";
+    card.appendChild(subEl);
+
+      // Lien RSVP cliquable sous le QR
+const linkEl = document.createElement("a");
+linkEl.href      = qrData(g);
+linkEl.target    = "_blank";
+linkEl.style.cssText = "font-size:9px;color:#7F77DD;margin-top:4px;"
+  + "display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+  + "text-decoration:none";
+linkEl.textContent = "Confirmer ma présence";
+linkEl.onclick = function(e) { e.stopPropagation(); };
+card.appendChild(linkEl);
+
+    card.onclick = function() { openTicket(g.id); };
+    grid.appendChild(card);
+  });
+};
+
+// ── 8. Ouvrir le carton ───────────────────────────────────────
+window.openTicket = function (id) {
+  currentGuestId = id;
+  const g        = allGuests.find(function(x) { return x.id === id; });
+  const seat     = g.seats && g.seats[0] ? g.seats[0] : null;
+  const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : null;
+  const chaise   = seat ? seat.numero_chaise : null;
+
+  document.getElementById("ticket-title").textContent = "Carton — " + g.nom;
+
+  const body = document.getElementById("ticket-body");
+  body.innerHTML = "";
+
+  // Conteneur principal
+  const modal = document.createElement("div");
+  modal.className = "ticket-modal";
+
+  // QR grand format
+  const qrHolder = document.createElement("div");
+  qrHolder.style.flexShrink = "0";
+  qrHolder.appendChild(makeQRImg(qrData(g), 150, g.nom));
+  modal.appendChild(qrHolder);
+
+  // Infos
+  const info = document.createElement("div");
+  info.style.flex = "1";
+
+  const nom = document.createElement("div");
+  nom.style.cssText  = "font-size:16px;font-weight:500;margin-bottom:10px";
+  nom.textContent    = g.nom;
+  info.appendChild(nom);
+
+  const rows = [
+    ["Catégorie", g.categorie],
+    ["Table",     tableNom || "Non assigné"],
+    ["Chaise",    chaise ? "N° " + chaise : "—"],
+    ["Téléphone", g.telephone || "—"],
+    ["Email",     g.email     || "—"],
+    ["Statut",    g.statut === "confirmed" ? "Confirmé"
+                : g.statut === "absent"    ? "Absent"
+                :                            "En attente"],
+  ];
+
+  const details = document.createElement("div");
+  details.style.cssText = "display:flex;flex-direction:column;gap:7px;font-size:13px";
+
+  rows.forEach(function(r) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:space-between";
+    const lbl = document.createElement("span");
+    lbl.style.color   = "#888";
+    lbl.textContent   = r[0];
+    const val = document.createElement("span");
+    val.style.fontWeight = "500";
+    val.textContent   = r[1];
+    row.appendChild(lbl);
+    row.appendChild(val);
+    details.appendChild(row);
+  });
+
+  info.appendChild(details);
+
+  const footer = document.createElement("div");
+  footer.style.cssText = "margin-top:12px;padding:8px 10px;background:#f5f5f3;"
+    + "border-radius:6px;font-size:11px;color:#888;line-height:1.5";
+  footer.textContent = "ID : EVPRO-" + g.id + " · Scanner à l'entrée";
+  info.appendChild(footer);
+
+  modal.appendChild(info);
+  body.appendChild(modal);
+
+  document.getElementById("modal-ticket").classList.add("open");
+};
+
+window.closeTicket = function () {
+  document.getElementById("modal-ticket").classList.remove("open");
+  currentGuestId = null;
+};
+
+// ── 9. Impression ─────────────────────────────────────────────
+window.printTicket = function () {
+  if (!currentGuestId) return;
+  const g        = allGuests.find(function(x) { return x.id === currentGuestId; });
+  const seat     = g.seats && g.seats[0] ? g.seats[0] : null;
+  const tableNom = seat && seat.tables_salle ? seat.tables_salle.nom : "Non assigné";
+  const chaise   = seat ? seat.numero_chaise : null;
+  const qrSrc    = qrUrl(qrData(g), 180);
+
+  const rsvpLink = qrData(g); // L'URL RSVP
+
+const html = [
+  "<!DOCTYPE html>",
+  "<html><head><meta charset='UTF-8'>",
+  "<title>Carton " + g.nom + "</title>",
+  "<style>",
+  "body{font-family:sans-serif;padding:24px;max-width:420px}",
+  ".top{display:flex;gap:16px;margin-bottom:16px;align-items:flex-start}",
+  "h2{font-size:16px;margin-bottom:12px}",
+  ".r{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:0.5px solid #eee}",
+  ".l{color:#888}",
+  ".ft{margin-top:14px;font-size:10px;color:#bbb;border-top:1px solid #eee;padding-top:10px}",
+  ".rsvp{margin-top:12px;padding:10px;background:#EEEDFE;border-radius:8px;text-align:center}",
+  ".rsvp p{font-size:11px;color:#534AB7;margin-bottom:4px;font-weight:500}",
+  ".rsvp a{font-size:10px;color:#7F77DD;word-break:break-all}",
+  "img{border:1px solid #eee;border-radius:4px}",
+  "</style></head><body>",
+  "<div class='top'>",
+  "<img src='" + qrSrc + "' width='180' height='180'/>",
+  "<div style='flex:1'>",
+  "<h2>" + g.nom + "</h2>",
+  "<div class='r'><span class='l'>Categorie</span><span>" + g.categorie + "</span></div>",
+  "<div class='r'><span class='l'>Table</span><span>" + tableNom + "</span></div>",
+  "<div class='r'><span class='l'>Chaise</span><span>" + (chaise ? "N " + chaise : "-") + "</span></div>",
+  "<div class='r'><span class='l'>Tel</span><span>" + (g.telephone || "-") + "</span></div>",
+  "<div class='r'><span class='l'>Email</span><span>" + (g.email || "-") + "</span></div>",
+  "</div></div>",
+  // ── Bloc RSVP avec lien cliquable ──
+  "<div class='rsvp'>",
+  "<p>Confirmez votre presence en scannant le QR ou en cliquant le lien :</p>",
+  "<a href='" + rsvpLink + "'>" + rsvpLink + "</a>",
+  "</div>",
+  "<div class='ft'>ID: EVPRO-" + g.id + " · BSAEvent</div>",
+  "</body></html>"
+].join("");
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
+
+  if (win) {
+    win.onload = function () {
+      setTimeout(function () {
+        win.print();
+        URL.revokeObjectURL(url);
+      }, 800);
+    };
+  } else {
+    alert("Autorise les popups dans ton navigateur pour imprimer.");
+    URL.revokeObjectURL(url);
+  }
+};
+
+// ── 10. Démarrage ─────────────────────────────────────────────
+async function init() {
+  allGuests = await getGuests(EVENT_ID);
+  renderQR();
+}
+
+init();
+</script>
+</body>
+</html>

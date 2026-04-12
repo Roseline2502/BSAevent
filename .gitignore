@@ -1,0 +1,9 @@
+
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Dossiers inutiles
+node_modules/
+.cache/

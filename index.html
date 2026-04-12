@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Tableau de bord</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="logo">
+      <img src="assets/LogoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <!-- Dans la topbar de index.html -->
+<a class="nav-btn" href="pages/mobile.html" target="_blank">
+  Mode accueil
+</a>
+      <a class="nav-btn active" href="index.html">Tableau de bord</a>
+      <a class="nav-btn" href="pages/guests.html">Invités</a>
+      <a class="nav-btn" href="pages/seating.html">Plan de salle</a>
+      <a class="nav-btn" href="pages/checkin.html">Check-in</a>
+      <a class="nav-btn" href="pages/qr.html">QR codes</a>
+      <a class="nav-btn" href="pages/print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h1 id="event-nom" style="font-size:18px;font-weight:500;margin-bottom:4px">Chargement...</h1>
+        <div id="event-meta" style="font-size:13px;color:#888"></div>
+      </div>
+      <button class="btn btn-primary" onclick="openModal()">+ Ajouter invité</button>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-val" id="st-total"     style="color:var(--purple)">—</div><div class="stat-lbl">Total invités</div></div>
+      <div class="stat"><div class="stat-val" id="st-confirmed" style="color:var(--teal)">—</div><div class="stat-lbl">Confirmés</div></div>
+      <div class="stat"><div class="stat-val" id="st-pending"   style="color:var(--amber)">—</div><div class="stat-lbl">En attente</div></div>
+      <div class="stat"><div class="stat-val" id="st-arrived"   style="color:var(--coral)">—</div><div class="stat-lbl">Arrivés</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Occupation des tables</span></div>
+        <div id="dash-tables"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Vue d'ensemble</span></div>
+        <div id="dash-overview"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Ajouter un invité</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Nom complet *</label>
+        <input type="text" id="g-name" placeholder="Jean Dupont" />
+      </div>
+      <div class="form-group">
+        <label>Téléphone</label>
+        <input type="text" id="g-phone" placeholder="+237 6XX XXX XXX" />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="text" id="g-email" placeholder="email@exemple.com" />
+      </div>
+      <div class="form-group">
+        <label>Catégorie</label>
+        <select id="g-cat">
+          <option value="Normal">Normal</option>
+          <option value="VIP">VIP</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Statut</label>
+        <select id="g-status">
+          <option value="pending">En attente</option>
+          <option value="confirmed">Confirmé</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveGuest()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── 1. Imports ────────────────────────────────────────────────
+import { requireAuth, requireEvent } from "./js/api/auth.js";
+import { getEvent }                  from "./js/api/events.js";
+import { getGuests, addGuest }       from "./js/api/guests.js";
+import { getTables }                 from "./js/api/tables.js";
+
+// ── 2. Protection ─────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+const ev = requireEvent();
+if (!ev) throw new Error("Aucun événement sélectionné");
+
+const EVENT_ID = ev.id;
+
+// ── 3. Chargement principal ───────────────────────────────────
+async function init() {
+  const [event, guests, tables] = await Promise.all([
+    getEvent(EVENT_ID),
+    getGuests(EVENT_ID),
+    getTables(EVENT_ID),
+  ]);
+
+  if (event) {
+    document.getElementById("event-nom").textContent  = event.nom;
+    document.getElementById("event-meta").textContent = event.date + " · " + event.lieu;
+  }
+
+  render(guests, tables);
+}
+
+// ── 4. Rendu ──────────────────────────────────────────────────
+function render(guests, tables) {
+  document.getElementById("st-total").textContent =
+    guests.length;
+  document.getElementById("st-confirmed").textContent =
+    guests.filter(g => g.statut === "confirmed").length;
+  document.getElementById("st-pending").textContent =
+    guests.filter(g => g.statut === "pending").length;
+  document.getElementById("st-arrived").textContent =
+    guests.filter(g => g.arrived).length;
+
+  document.getElementById("dash-tables").innerHTML = tables.map(t => {
+    const seated = guests.filter(g =>
+      g.seats && g.seats.some(s => s.table_id === t.id)
+    ).length;
+    const pct = t.capacite > 0 ? Math.round(seated / t.capacite * 100) : 0;
+    const col = pct >= 100 ? "var(--teal)" : pct > 50 ? "var(--purple)" : "#ccc";
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;
+                  font-size:12px;margin-bottom:4px">
+        <span>${t.nom}</span>
+        <span style="color:#888">${seated}/${t.capacite}</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill"
+             style="width:${pct}%;background:${col}"></div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const vip      = guests.filter(g => g.categorie === "VIP").length;
+  const normal   = guests.filter(g => g.categorie === "Normal").length;
+  const seated   = guests.filter(g => g.seats && g.seats.length > 0).length;
+  const totalCap = tables.reduce((a, t) => a + t.capacite, 0);
+  const tauxOcc  = totalCap > 0 ? Math.round(seated / totalCap * 100) : 0;
+
+  document.getElementById("dash-overview").innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+      <div style="display:flex;justify-content:space-between">
+        <span>VIP</span>
+        <span class="badge badge-vip">${vip} invités</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span>Standard</span>
+        <span class="badge badge-normal">${normal} invités</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span>Places assignées</span>
+        <span class="badge badge-present">${seated} / ${guests.length}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span>Capacité totale</span>
+        <span style="font-weight:500">${totalCap} places</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span>Taux d'occupation</span>
+        <span style="font-weight:500">${tauxOcc}%</span>
+      </div>
+    </div>`;
+}
+
+// ── 5. Modal ──────────────────────────────────────────────────
+window.openModal  = () => document.getElementById("modal").classList.add("open");
+window.closeModal = () => document.getElementById("modal").classList.remove("open");
+
+// ── 6. Sauvegarder un invité ──────────────────────────────────
+window.saveGuest = async function () {
+  const nom = document.getElementById("g-name").value.trim();
+  if (!nom) { alert("Veuillez saisir un nom."); return; }
+
+  const btn = document.getElementById("btn-save");
+  btn.disabled    = true;
+  btn.textContent = "Enregistrement...";
+
+  const result = await addGuest(EVENT_ID, {
+    nom,
+    telephone: document.getElementById("g-phone").value || null,
+    email:     document.getElementById("g-email").value || null,
+    categorie: document.getElementById("g-cat").value,
+    statut:    document.getElementById("g-status").value,
+  });
+
+  btn.disabled    = false;
+  btn.textContent = "Enregistrer";
+
+  if (result) {
+    closeModal();
+    ["g-name", "g-phone", "g-email"].forEach(id =>
+      document.getElementById(id).value = ""
+    );
+    init();
+  } else {
+    alert("Erreur lors de l'enregistrement. Vérifie la console (F12).");
+  }
+};
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

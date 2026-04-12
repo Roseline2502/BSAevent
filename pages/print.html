@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Impression</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .print-area       { background: #f5f5f3; border-radius: 12px; padding: 20px; }
+    .plan-doc         { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 24px; }
+    .plan-header      { text-align: center; border-bottom: 1px solid #ddd;
+                        padding-bottom: 14px; margin-bottom: 16px; }
+    .plan-header h1   { font-size: 18px; font-weight: 600; color: #222; }
+    .plan-header p    { font-size: 12px; color: #999; margin-top: 4px; }
+    .tables-grid      { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .table-box        { border: 1px solid #ccc; border-radius: 8px;
+                        padding: 10px; break-inside: avoid; }
+    .table-box-title  { font-weight: 600; font-size: 12px; margin-bottom: 6px;
+                        border-bottom: 1px solid #eee; padding-bottom: 5px; color: #333; }
+    .seat-row         { display: flex; justify-content: space-between; padding: 3px 0;
+                        font-size: 11px; border-bottom: 0.5px solid #f0f0f0; }
+    .seat-row:last-child { border-bottom: none; }
+    .seat-name        { font-weight: 500; color: #222; }
+    .seat-empty       { color: #ccc; }
+    .plan-footer      { text-align: center; margin-top: 16px; font-size: 10px; color: #bbb;
+                        border-top: 1px solid #eee; padding-top: 10px; }
+
+    @media print {
+      .topbar, .nav, .btn { display: none !important; }
+      .print-area          { background: #fff; padding: 0; }
+      .plan-doc            { border: none; padding: 0; }
+      .tables-grid         { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <img src="../assets/logoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <a class="nav-btn" href="../index.html">Tableau de bord</a>
+      <a class="nav-btn" href="guests.html">Invités</a>
+      <a class="nav-btn" href="seating.html">Plan de salle</a>
+      <a class="nav-btn" href="checkin.html">Check-in</a>
+      <a class="nav-btn" href="qr.html">QR codes</a>
+      <a class="nav-btn active" href="print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:16px;font-weight:500">Impression — Plan de salle</div>
+        <div style="font-size:12px;color:#888;margin-top:2px">
+          Plan complet par table, prêt à imprimer sur A4
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+    </div>
+    <div class="print-area">
+      <div class="plan-doc" id="plan-doc">
+        <div style="color:#bbb;font-size:13px;padding:20px 0">Chargement...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── 1. Imports ────────────────────────────────────────────────
+import { requireAuth, requireEvent } from "../js/api/auth.js";
+import { getEvent }                  from "../js/api/events.js";
+import { getGuests }                 from "../js/api/guests.js";
+import { getTables }                 from "../js/api/tables.js";
+
+// ── 2. Protection ─────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+const ev = requireEvent();
+if (!ev) throw new Error("Aucun événement sélectionné");
+
+const EVENT_ID = ev.id;
+
+// ── 3. Rendu du plan imprimable ───────────────────────────────
+function renderPrint(event, guests, tables) {
+  const tablesHTML = tables.map(t => {
+    const seated = guests.filter(g =>
+      g.seats && g.seats.some(s => s.table_id === t.id)
+    );
+
+    const rows = Array.from({ length: t.capacite }, (_, i) => {
+      const chaise = i + 1;
+      const g = guests.find(guest =>
+        guest.seats && guest.seats.some(s =>
+          s.table_id === t.id && s.numero_chaise === chaise
+        )
+      );
+      return `<div class="seat-row">
+        <span>${chaise}.</span>
+        <span class="${g ? "seat-name" : "seat-empty"}">
+          ${g ? g.nom + (g.categorie === "VIP" ? " ★" : "") : "—"}
+        </span>
+      </div>`;
+    }).join("");
+
+    return `<div class="table-box">
+      <div class="table-box-title">
+        ${t.nom}
+        <span style="font-weight:400;color:#aaa">${seated.length}/${t.capacite}</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).join("");
+
+  document.getElementById("plan-doc").innerHTML = `
+    <div class="plan-header">
+      <h1>${event.nom}</h1>
+      <p>${event.date || "—"} · ${event.lieu || "—"}</p>
+    </div>
+    <div class="tables-grid">${tablesHTML}</div>
+    <div class="plan-footer">
+      Imprimé le ${new Date().toLocaleDateString("fr-FR")} · BSAEvent Manager · ★ = Invité VIP
+    </div>`;
+}
+
+// ── 4. Chargement initial ─────────────────────────────────────
+async function init() {
+  const [event, guests, tables] = await Promise.all([
+    getEvent(EVENT_ID),
+    getGuests(EVENT_ID),
+    getTables(EVENT_ID),
+  ]);
+
+  if (!event) {
+    document.getElementById("plan-doc").innerHTML =
+      `<div style="color:#e44;font-size:13px;padding:20px 0">
+         Erreur : événement introuvable.
+       </div>`;
+    return;
+  }
+
+  renderPrint(event, guests, tables);
+}
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
