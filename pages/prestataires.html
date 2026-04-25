@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSAEvent — Prestataires</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .prest-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .prest-card {
+      background: #fff;
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      position: relative;
+    }
+    .prest-card.confirme  { border-left: 3px solid var(--teal); }
+    .prest-card.en_attente{ border-left: 3px solid var(--amber); }
+    .prest-card.annule    { border-left: 3px solid var(--red-text); }
+    .prest-categorie {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--purple);
+      letter-spacing: .5px;
+      margin-bottom: 6px;
+    }
+    .prest-nom {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 4px;
+    }
+    .prest-tel {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+    .prest-montants {
+      background: #f5f5f3;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .prest-montant-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 2px 0;
+    }
+    .prest-montant-row.restant {
+      font-weight: 600;
+      color: var(--coral);
+      border-top: 0.5px solid #ddd;
+      margin-top: 4px;
+      padding-top: 4px;
+    }
+    .prest-montant-row.restant.ok { color: var(--teal); }
+    .prest-actions {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    .prest-notes {
+      font-size: 11px;
+      color: #888;
+      font-style: italic;
+      margin-bottom: 10px;
+    }
+    .summary-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .summary-card {
+      background: #fff;
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      text-align: center;
+    }
+    .summary-val { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+    .summary-lbl { font-size: 11px; color: #888; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <img src="../assets/logoEvent.png" alt="Logo BSAEvent">
+    </div>
+    <nav class="nav">
+      <a class="nav-btn" href="../index.html">Tableau de bord</a>
+      <a class="nav-btn" href="guests.html">Invités</a>
+      <a class="nav-btn" href="seating.html">Plan de salle</a>
+      <a class="nav-btn" href="checkin.html">Check-in</a>
+      <a class="nav-btn active" href="prestataires.html">Prestataires</a>
+      <a class="nav-btn" href="qr.html">QR codes</a>
+      <a class="nav-btn" href="print.html">Impression</a>
+    </nav>
+  </div>
+
+  <div class="content">
+
+    <!-- Barre d'actions -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div style="font-size:16px;font-weight:500">Prestataires retenus</div>
+      <div style="display:flex;gap:8px">
+        <select id="f-categorie" onchange="renderList()"
+          style="padding:7px 12px;border-radius:var(--radius-md);
+                 border:0.5px solid #ccc;font-size:13px;background:#fff">
+          <option value="">Toutes catégories</option>
+          <option value="Traiteur">Traiteur</option>
+          <option value="Maître de cérémonie">Maître de cérémonie</option>
+          <option value="Sono et lumière">Sono et lumière</option>
+          <option value="Hôtesse et protocole">Hôtesse et protocole</option>
+          <option value="Serveur">Serveur</option>
+          <option value="Transporteur">Transporteur</option>
+          <option value="Photographe et vidéaste">Photographe et vidéaste</option>
+          <option value="Pâtissier">Pâtissier</option>
+          <option value="Mixologue">Mixologue</option>
+          <option value="Agent de sécurité">Agent de sécurité</option>
+          <option value="Électricien">Électricien</option>
+          <option value="Menuisier">Menuisier</option>
+          <option value="Autre">Autre</option>
+        </select>
+        <button class="btn btn-primary" onclick="openAddModal()">
+          + Ajouter prestataire
+        </button>
+      </div>
+    </div>
+
+    <!-- Résumé financier -->
+    <div class="summary-bar" id="summary-bar"></div>
+
+    <!-- Liste des prestataires -->
+    <div class="prest-grid" id="prest-grid">
+      <div style="color:#bbb;font-size:13px;padding:20px 0;grid-column:1/-1">
+        Chargement...
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal ajouter / modifier -->
+<div class="modal-overlay" id="modal-add">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Ajouter un prestataire</div>
+      <button class="modal-close" onclick="closeAddModal()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Catégorie *</label>
+        <select id="p-cat">
+          <option value="Traiteur">Traiteur</option>
+          <option value="Maître de cérémonie">Maître de cérémonie</option>
+          <option value="Sono et lumière">Sono et lumière</option>
+          <option value="Hôtesse et protocole">Hôtesse et protocole</option>
+          <option value="Serveur">Serveur</option>
+          <option value="Transporteur">Transporteur</option>
+          <option value="Photographe et vidéaste">Photographe et vidéaste</option>
+          <option value="Pâtissier">Pâtissier</option>
+          <option value="Mixologue">Mixologue</option>
+          <option value="Agent de sécurité">Agent de sécurité</option>
+          <option value="Électricien">Électricien</option>
+          <option value="Menuisier">Menuisier</option>
+          <option value="Autre">Autre</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Nom et prénom *</label>
+        <input type="text" id="p-nom" placeholder="Jean Dupont" />
+      </div>
+      <div class="form-group">
+        <label>Téléphone</label>
+        <input type="text" id="p-tel" placeholder="+237 6XX XXX XXX" />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="text" id="p-email" placeholder="email@exemple.com" />
+      </div>
+      <div class="form-group">
+        <label>Montant total du contrat (FCFA)</label>
+        <input type="number" id="p-total" placeholder="0" min="0" />
+      </div>
+      <div class="form-group">
+        <label>Montant déjà payé (FCFA)</label>
+        <input type="number" id="p-paye" placeholder="0" min="0" />
+      </div>
+      <div class="form-group">
+        <label>Statut de confirmation</label>
+        <select id="p-statut">
+          <option value="en_attente">En attente</option>
+          <option value="confirme">Confirmé</option>
+          <option value="annule">Annulé</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Statut de paiement</label>
+        <select id="p-paiement">
+          <option value="non_paye">Non payé</option>
+          <option value="partiel">Partiel</option>
+          <option value="paye">Payé intégralement</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Notes / remarques</label>
+        <input type="text" id="p-notes"
+          placeholder="Ex: Livraison à 18h, matériel inclus..." />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAddModal()">Annuler</button>
+      <button class="btn btn-primary" id="btn-save" onclick="savePrestataire()">
+        Enregistrer
+      </button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── 1. Imports ────────────────────────────────────────────────
+import { requireAuth, requireEvent }        from "../js/api/auth.js";
+import { getPrestataires, addPrestataire,
+         updatePrestataire, deletePrestataire } from "../js/api/prestataires.js";
+
+// ── 2. Protection ─────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error("Non connecté");
+
+const ev = requireEvent();
+if (!ev) throw new Error("Aucun événement sélectionné");
+
+const EVENT_ID = ev.id;
+
+// ── 3. Variables ──────────────────────────────────────────────
+let prestataires = [];
+let editingId    = null;
+
+// ── 4. Chargement ─────────────────────────────────────────────
+async function init() {
+  prestataires = await getPrestataires(EVENT_ID);
+  renderSummary();
+  renderList();
+}
+
+// ── 5. Résumé financier ───────────────────────────────────────
+function renderSummary() {
+  const total    = prestataires.length;
+  const confirme = prestataires.filter(p => p.statut_confirmation === "confirme").length;
+  const budgetTotal = prestataires.reduce((a, p) => a + (p.montant_total || 0), 0);
+  const budgetPaye  = prestataires.reduce((a, p) => a + (p.montant_paye  || 0), 0);
+  const restant     = budgetTotal - budgetPaye;
+
+  document.getElementById("summary-bar").innerHTML = [
+    sumCard(total, "Prestataires", "var(--purple)"),
+    sumCard(confirme, "Confirmés", "var(--teal)"),
+    sumCard(formatFCFA(budgetTotal), "Budget total", "#1a1a1a"),
+    sumCard(formatFCFA(budgetPaye),  "Total payé", "var(--teal)"),
+    sumCard(formatFCFA(restant),     "Reste à payer",
+      restant > 0 ? "var(--coral)" : "var(--teal)"),
+  ].join("");
+}
+
+function sumCard(val, lbl, color) {
+  return "<div class='summary-card'>"
+    + "<div class='summary-val' style='color:" + color + "'>" + val + "</div>"
+    + "<div class='summary-lbl'>" + lbl + "</div>"
+    + "</div>";
+}
+
+function formatFCFA(n) {
+  return new Intl.NumberFormat("fr-FR").format(n) + " FCFA";
+}
+
+// ── 6. Rendu de la liste ──────────────────────────────────────
+window.renderList = function () {
+  const fc   = document.getElementById("f-categorie").value;
+  const list = prestataires.filter(p => !fc || p.categorie === fc);
+  const grid = document.getElementById("prest-grid");
+
+  if (list.length === 0) {
+    grid.innerHTML = "<div style='color:#bbb;font-size:13px;"
+      + "padding:20px 0;grid-column:1/-1'>Aucun prestataire trouvé.</div>";
+    return;
+  }
+
+  grid.innerHTML = list.map(p => {
+    const restant  = (p.montant_total || 0) - (p.montant_paye || 0);
+    const isOk     = restant <= 0;
+
+    const statutBadge = p.statut_confirmation === "confirme"
+      ? "<span class='badge badge-present'>Confirmé</span>"
+      : p.statut_confirmation === "annule"
+      ? "<span class='badge badge-absent'>Annulé</span>"
+      : "<span class='badge badge-pending'>En attente</span>";
+
+    const paiementBadge = p.statut_paiement === "paye"
+      ? "<span class='badge badge-present'>Payé</span>"
+      : p.statut_paiement === "partiel"
+      ? "<span class='badge badge-pending'>Partiel</span>"
+      : "<span class='badge badge-absent'>Non payé</span>";
+
+    return "<div class='prest-card " + p.statut_confirmation + "'>"
+      + "<div class='prest-categorie'>" + p.categorie + "</div>"
+      + "<div class='prest-nom'>" + p.nom + "</div>"
+      + "<div class='prest-tel'>"
+        + (p.telephone ? "📞 " + p.telephone : "—")
+        + (p.email ? " &nbsp;·&nbsp; ✉️ " + p.email : "")
+      + "</div>"
+      + "<div class='prest-montants'>"
+        + "<div class='prest-montant-row'>"
+          + "<span style='color:#888'>Contrat</span>"
+          + "<span>" + formatFCFA(p.montant_total || 0) + "</span>"
+        + "</div>"
+        + "<div class='prest-montant-row'>"
+          + "<span style='color:#888'>Payé</span>"
+          + "<span>" + formatFCFA(p.montant_paye || 0) + "</span>"
+        + "</div>"
+        + "<div class='prest-montant-row restant" + (isOk ? " ok" : "") + "'>"
+          + "<span>Reste à payer</span>"
+          + "<span>" + formatFCFA(restant) + "</span>"
+        + "</div>"
+      + "</div>"
+      + (p.notes ? "<div class='prest-notes'>📝 " + p.notes + "</div>" : "")
+      + "<div style='display:flex;justify-content:space-between;"
+        + "align-items:center;margin-bottom:8px'>"
+        + statutBadge + " " + paiementBadge
+      + "</div>"
+      + "<div class='prest-actions'>"
+        + "<button class='btn btn-sm' onclick=\"editPrestataire('" + p.id + "')\">Modifier</button>"
+        + "<button class='btn btn-sm btn-danger' onclick=\"delPrestataire('" + p.id + "')\">Suppr.</button>"
+      + "</div>"
+      + "</div>";
+  }).join("");
+};
+
+// ── 7. Modal AJOUT ────────────────────────────────────────────
+window.openAddModal = function () {
+  editingId = null;
+  document.getElementById("modal-title").textContent = "Ajouter un prestataire";
+  document.getElementById("p-cat").value     = "Traiteur";
+  document.getElementById("p-nom").value     = "";
+  document.getElementById("p-tel").value     = "";
+  document.getElementById("p-email").value   = "";
+  document.getElementById("p-total").value   = "";
+  document.getElementById("p-paye").value    = "";
+  document.getElementById("p-statut").value  = "en_attente";
+  document.getElementById("p-paiement").value= "non_paye";
+  document.getElementById("p-notes").value   = "";
+  document.getElementById("modal-add").classList.add("open");
+};
+
+window.closeAddModal = () =>
+  document.getElementById("modal-add").classList.remove("open");
+
+// ── 8. Modal MODIFICATION ─────────────────────────────────────
+window.editPrestataire = function (id) {
+  editingId  = id;
+  const p    = prestataires.find(x => x.id === id);
+  document.getElementById("modal-title").textContent = "Modifier le prestataire";
+  document.getElementById("p-cat").value     = p.categorie;
+  document.getElementById("p-nom").value     = p.nom;
+  document.getElementById("p-tel").value     = p.telephone  || "";
+  document.getElementById("p-email").value   = p.email      || "";
+  document.getElementById("p-total").value   = p.montant_total || "";
+  document.getElementById("p-paye").value    = p.montant_paye  || "";
+  document.getElementById("p-statut").value  = p.statut_confirmation;
+  document.getElementById("p-paiement").value= p.statut_paiement;
+  document.getElementById("p-notes").value   = p.notes || "";
+  document.getElementById("modal-add").classList.add("open");
+};
+
+// ── 9. Supprimer ──────────────────────────────────────────────
+window.delPrestataire = async function (id) {
+  if (!confirm("Supprimer ce prestataire ?")) return;
+  const ok = await deletePrestataire(id);
+  if (ok) init();
+  else alert("Erreur lors de la suppression.");
+};
+
+// ── 10. Sauvegarder ───────────────────────────────────────────
+window.savePrestataire = async function () {
+  const nom = document.getElementById("p-nom").value.trim();
+  if (!nom) { alert("Veuillez saisir un nom."); return; }
+
+  const fields = {
+    categorie:            document.getElementById("p-cat").value,
+    nom,
+    telephone:            document.getElementById("p-tel").value   || null,
+    email:                document.getElementById("p-email").value || null,
+    montant_total:        parseFloat(document.getElementById("p-total").value) || 0,
+    montant_paye:         parseFloat(document.getElementById("p-paye").value)  || 0,
+    statut_confirmation:  document.getElementById("p-statut").value,
+    statut_paiement:      document.getElementById("p-paiement").value,
+    notes:                document.getElementById("p-notes").value || null,
+  };
+
+  const btn = document.getElementById("btn-save");
+  btn.disabled    = true;
+  btn.textContent = "Enregistrement...";
+
+  const result = editingId
+    ? await updatePrestataire(editingId, fields)
+    : await addPrestataire(EVENT_ID, fields);
+
+  btn.disabled    = false;
+  btn.textContent = "Enregistrer";
+
+  if (result) {
+    closeAddModal();
+    init();
+  } else {
+    alert("Erreur. Vérifie la console (F12).");
+  }
+};
+
+// ── Démarrage ─────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
